@@ -2,4 +2,4 @@ FROM acoshift/go-scratch
 
 ADD entrypoint /entrypoint
 
-RUN ["./entrypoint"]
+CMD ["./entrypoint"]
