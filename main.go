@@ -9,6 +9,8 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
+	"strings"
+	"time"
 
 	"cloud.google.com/go/pubsub"
 	"github.com/acoshift/configfile"
@@ -31,10 +33,42 @@ func main() {
 		log.Fatal(err)
 	}
 	err = client.Subscription(config.String("subscription")).Receive(context.Background(), func(ctx context.Context, msg *pubsub.Message) {
-		buildID := msg.Attributes["buildId"]
-		status := msg.Attributes["status"]
-		m := fmt.Sprintf("cloudbuild: %s - %s - https://console.cloud.google.com/gcr/builds/%s?project=%s", buildID, status, buildID, projectID)
-		go sendSlackMessage(slackURL, m)
+		var d buildData
+		json.Unmarshal(msg.Data, &d)
+		images := strings.Join(d.Images, ", ")
+		go sendSlackMessage(slackURL, &slackMsg{
+			Attachments: []slackAttachment{
+				{
+					Fallback:  fmt.Sprintf("cloudbuild: %s:%s", d.SourceProvenance.ResolvedRepoSource.RepoName, d.SourceProvenance.ResolvedRepoSource.CommitSha),
+					Color:     statusColor[d.Status],
+					Title:     "Cloud Build",
+					TitleLink: fmt.Sprintf("https://console.cloud.google.com/gcr/builds/%s?project=%s", d.ID, d.SourceProvenance.ResolvedRepoSource.ProjectID),
+					Text:      images,
+					Fields: []slackField{
+						{
+							Title: "Name",
+							Value: d.SourceProvenance.ResolvedRepoSource.ProjectID,
+						},
+						{
+							Title: "RepoName",
+							Value: d.SourceProvenance.ResolvedRepoSource.RepoName,
+						},
+						{
+							Title: "CommitSha",
+							Value: d.SourceProvenance.ResolvedRepoSource.CommitSha,
+						},
+						{
+							Title: "ProjectID",
+							Value: d.SourceProvenance.ResolvedRepoSource.ProjectID,
+						},
+						{
+							Title: "Status",
+							Value: d.Status,
+						},
+					},
+				},
+			},
+		})
 		msg.Ack()
 	})
 	if err != nil {
@@ -42,16 +76,90 @@ func main() {
 	}
 }
 
-func sendSlackMessage(slackURL string, message string) error {
+var statusColor = map[string]string{
+	"QUEUED":         "#b2b2b2",
+	"WORKING":        "#faff77",
+	"SUCCESS":        "#75ff56",
+	"FAILURE":        "#f92a2a",
+	"INTERNAL_ERROR": "#a51c1c",
+	"TIMEOUT":        "#820202",
+	"CANCELLED":      "#b959ff",
+}
+
+type buildData struct {
+	ID        string `json:"id"`
+	ProjectID string `json:"projectId"`
+	Status    string `json:"status"`
+	Source    struct {
+		RepoSource struct {
+			ProjectID  string `json:"projectId"`
+			RepoName   string `json:"repoName"`
+			BranchName string `json:"branchName"`
+		} `json:"repoSource"`
+	} `json:"source"`
+	CreateTime time.Time `json:"createTime"`
+	Timeout    string    `json:"timeout"`
+	Images     []string  `json:"images"`
+	Artifacts  struct {
+		Images []string `json:"images"`
+	} `json:"artifacts"`
+	LogsBucket       string `json:"logsBucket"`
+	SourceProvenance struct {
+		ResolvedRepoSource struct {
+			ProjectID string `json:"projectId"`
+			RepoName  string `json:"repoName"`
+			CommitSha string `json:"commitSha"`
+		} `json:"resolvedRepoSource"`
+	} `json:"sourceProvenance"`
+	BuildTriggerID string `json:"buildTriggerId"`
+	Options        struct {
+		SubstitutionOption string `json:"substitutionOption"`
+	} `json:"options"`
+	LogURL        string `json:"logUrl"`
+	Substitutions struct {
+		INVOCATIONID     string `json:"_INVOCATION_ID"`
+		PLANEVALUATIONID string `json:"_PLAN_EVALUATION_ID"`
+		PROJECTNUMBER    string `json:"_PROJECT_NUMBER"`
+	} `json:"substitutions"`
+	Tags []string `json:"tags"`
+}
+
+type slackMsg struct {
+	Text        string            `json:"text,omitempty"`
+	Attachments []slackAttachment `json:"attachments,omitempty"`
+}
+
+type slackAttachment struct {
+	Fallback   string       `json:"fallback"`
+	Color      string       `json:"color"`
+	Pretext    string       `json:"pretext"`
+	AuthorName string       `json:"author_name,omitempty"`
+	AnthorLink string       `json:"anthor_link,omitempty"`
+	AuthorIcon string       `json:"anthor_icon,omitempty"`
+	Title      string       `json:"title"`
+	TitleLink  string       `json:"title_link"`
+	Text       string       `json:"text"`
+	Fields     []slackField `json:"fields"`
+	ImageURL   string       `json:"image_url,omitempty"`
+	ThumbURL   string       `json:"thumb_url,omitempty"`
+	Footer     string       `json:"footer,omitempty"`
+	FooterIcon string       `json:"footer_icon,omitempty"`
+	Timestamp  int64        `json:"ts"`
+}
+
+type slackField struct {
+	Title string `json:"title"`
+	Value string `json:"value"`
+	Short bool   `json:"short"`
+}
+
+func sendSlackMessage(slackURL string, message *slackMsg) error {
 	if slackURL == "" {
 		return nil
 	}
 
-	payload := struct {
-		Text string `json:"text"`
-	}{message}
 	buf := bytes.Buffer{}
-	err := json.NewEncoder(&buf).Encode(&payload)
+	err := json.NewEncoder(&buf).Encode(message)
 	if err != nil {
 		return err
 	}
