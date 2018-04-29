@@ -10,7 +10,6 @@ import (
 	"log"
 	"net/http"
 	"strings"
-	"time"
 
 	"cloud.google.com/go/pubsub"
 	"github.com/acoshift/configfile"
@@ -53,23 +52,20 @@ func main() {
 					Fallback:  fmt.Sprintf("cloudbuild: %s:%s", d.SourceProvenance.ResolvedRepoSource.RepoName, d.SourceProvenance.ResolvedRepoSource.CommitSha),
 					Color:     color,
 					Title:     "Cloud Build",
-					TitleLink: fmt.Sprintf("https://console.cloud.google.com/gcr/builds/%s?project=%s", d.ID, d.SourceProvenance.ResolvedRepoSource.ProjectID),
+					TitleLink: d.LogURL,
 					Text:      images,
+					Pretext:   d.ID,
 					Fields: []slackField{
 						{
-							Title: "Name",
-							Value: d.SourceProvenance.ResolvedRepoSource.ProjectID,
-						},
-						{
-							Title: "RepoName",
+							Title: "Repository",
 							Value: d.SourceProvenance.ResolvedRepoSource.RepoName,
 						},
 						{
-							Title: "CommitSha",
+							Title: "Commit SHA",
 							Value: d.SourceProvenance.ResolvedRepoSource.CommitSha,
 						},
 						{
-							Title: "ProjectID",
+							Title: "Project ID",
 							Value: d.SourceProvenance.ResolvedRepoSource.ProjectID,
 						},
 						{
@@ -107,10 +103,9 @@ type buildData struct {
 			BranchName string `json:"branchName"`
 		} `json:"repoSource"`
 	} `json:"source"`
-	CreateTime time.Time `json:"createTime"`
-	Timeout    string    `json:"timeout"`
-	Images     []string  `json:"images"`
-	Artifacts  struct {
+	Timeout   string   `json:"timeout"`
+	Images    []string `json:"images"`
+	Artifacts struct {
 		Images []string `json:"images"`
 	} `json:"artifacts"`
 	LogsBucket       string `json:"logsBucket"`
