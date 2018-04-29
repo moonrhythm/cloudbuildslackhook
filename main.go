@@ -33,14 +33,25 @@ func main() {
 		log.Fatal(err)
 	}
 	err = client.Subscription(config.String("subscription")).Receive(context.Background(), func(ctx context.Context, msg *pubsub.Message) {
+		defer msg.Ack()
+
 		var d buildData
-		json.Unmarshal(msg.Data, &d)
+		err := json.Unmarshal(msg.Data, &d)
+		if err != nil {
+			return
+		}
+
+		color := statusColor[d.Status]
+		if color == "" {
+			return
+		}
+
 		images := strings.Join(d.Images, ", ")
 		go sendSlackMessage(slackURL, &slackMsg{
 			Attachments: []slackAttachment{
 				{
 					Fallback:  fmt.Sprintf("cloudbuild: %s:%s", d.SourceProvenance.ResolvedRepoSource.RepoName, d.SourceProvenance.ResolvedRepoSource.CommitSha),
-					Color:     statusColor[d.Status],
+					Color:     color,
 					Title:     "Cloud Build",
 					TitleLink: fmt.Sprintf("https://console.cloud.google.com/gcr/builds/%s?project=%s", d.ID, d.SourceProvenance.ResolvedRepoSource.ProjectID),
 					Text:      images,
@@ -69,7 +80,6 @@ func main() {
 				},
 			},
 		})
-		msg.Ack()
 	})
 	if err != nil {
 		log.Fatal(err)
@@ -77,7 +87,7 @@ func main() {
 }
 
 var statusColor = map[string]string{
-	"QUEUED":         "#b2b2b2",
+	// "QUEUED":         "#b2b2b2",
 	"WORKING":        "#faff77",
 	"SUCCESS":        "#75ff56",
 	"FAILURE":        "#f92a2a",
@@ -112,16 +122,7 @@ type buildData struct {
 		} `json:"resolvedRepoSource"`
 	} `json:"sourceProvenance"`
 	BuildTriggerID string `json:"buildTriggerId"`
-	Options        struct {
-		SubstitutionOption string `json:"substitutionOption"`
-	} `json:"options"`
-	LogURL        string `json:"logUrl"`
-	Substitutions struct {
-		INVOCATIONID     string `json:"_INVOCATION_ID"`
-		PLANEVALUATIONID string `json:"_PLAN_EVALUATION_ID"`
-		PROJECTNUMBER    string `json:"_PROJECT_NUMBER"`
-	} `json:"substitutions"`
-	Tags []string `json:"tags"`
+	LogURL         string `json:"logUrl"`
 }
 
 type slackMsg struct {
