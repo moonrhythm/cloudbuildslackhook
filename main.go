@@ -45,7 +45,10 @@ func main() {
 			return
 		}
 
-		images := strings.Join(d.Images, ", ")
+		images := strings.Join(d.Images, "\n")
+		if images == "" {
+			images = "-"
+		}
 		go sendSlackMessage(slackURL, &slackMsg{
 			Attachments: []slackAttachment{
 				{
@@ -53,9 +56,15 @@ func main() {
 					Color:     color,
 					Title:     "Cloud Build",
 					TitleLink: d.LogURL,
-					Text:      images,
-					Pretext:   d.ID,
 					Fields: []slackField{
+						{
+							Title: "Build ID",
+							Value: d.ID,
+						},
+						{
+							Title: "Images",
+							Value: images,
+						},
 						{
 							Title: "Repository",
 							Value: d.SourceProvenance.ResolvedRepoSource.RepoName,
