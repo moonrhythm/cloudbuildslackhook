@@ -9,86 +9,112 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
+	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 
 	"cloud.google.com/go/pubsub"
 	"github.com/acoshift/configfile"
 	"google.golang.org/api/option"
+	"gopkg.in/yaml.v2"
+)
+
+type subscription struct {
+	ID        string `yaml:"id"`
+	ProjectID string `yaml:"projectId"`
+	URL       string `yaml:"url"`
+}
+
+var (
+	config = configfile.NewReader("config")
 )
 
 func main() {
-	config := configfile.NewReader("config")
+	ctx := context.Background()
 
-	projectID := config.String("project_id")
-	slackURL := config.String("slack_url")
-
-	client, err := pubsub.NewClient(
-		context.Background(),
-		projectID,
-		option.WithCredentialsFile("./config/service_account.json"),
-		option.WithScopes(pubsub.ScopePubSub),
-	)
+	client, err := pubsub.NewClient(ctx, "", option.WithScopes(pubsub.ScopePubSub))
 	if err != nil {
 		log.Fatal(err)
 	}
-	err = client.Subscription(config.String("subscription")).Receive(context.Background(), func(ctx context.Context, msg *pubsub.Message) {
-		defer msg.Ack()
+	defer client.Close()
 
-		var d buildData
-		err := json.Unmarshal(msg.Data, &d)
-		if err != nil {
-			return
-		}
+	var subs []subscription
+	err = yaml.Unmarshal(config.Bytes("subscriptions"), &subs)
+	if err != nil {
+		log.Fatal(err)
+	}
 
-		color := statusColor[d.Status]
-		if color == "" {
-			return
-		}
+	for _, sub := range subs {
+		fmt.Printf("subscribe to %s/%s\n", sub.ProjectID, sub.ID)
+		go client.SubscriptionInProject(sub.ID, sub.ProjectID).Receive(ctx, (&msgHandler{sub.URL}).Handle)
+	}
 
-		images := strings.Join(d.Images, "\n")
-		if images == "" {
-			images = "-"
-		}
-		go sendSlackMessage(slackURL, &slackMsg{
-			Attachments: []slackAttachment{
-				{
-					Fallback:  fmt.Sprintf("cloudbuild: %s:%s", d.SourceProvenance.ResolvedRepoSource.RepoName, d.SourceProvenance.ResolvedRepoSource.CommitSha),
-					Color:     color,
-					Title:     "Cloud Build",
-					TitleLink: d.LogURL,
-					Fields: []slackField{
-						{
-							Title: "Build ID",
-							Value: d.ID,
-						},
-						{
-							Title: "Images",
-							Value: images,
-						},
-						{
-							Title: "Repository",
-							Value: d.SourceProvenance.ResolvedRepoSource.RepoName,
-						},
-						{
-							Title: "Commit SHA",
-							Value: d.SourceProvenance.ResolvedRepoSource.CommitSha,
-						},
-						{
-							Title: "Project ID",
-							Value: d.SourceProvenance.ResolvedRepoSource.ProjectID,
-						},
-						{
-							Title: "Status",
-							Value: d.Status,
-						},
+	stop := make(chan os.Signal, 1)
+	signal.Notify(stop, syscall.SIGTERM)
+
+	<-stop
+}
+
+type msgHandler struct {
+	url string
+}
+
+func (h *msgHandler) Handle(ctx context.Context, msg *pubsub.Message) {
+	defer msg.Ack()
+
+	var d buildData
+	err := json.Unmarshal(msg.Data, &d)
+	if err != nil {
+		return
+	}
+
+	color := statusColor[d.Status]
+	if color == "" {
+		return
+	}
+
+	images := strings.Join(d.Images, "\n")
+	if images == "" {
+		images = "-"
+	}
+
+	go sendSlackMessage(h.url, &slackMsg{
+		Attachments: []slackAttachment{
+			{
+				Fallback:  fmt.Sprintf("cloudbuild: %s:%s", d.SourceProvenance.ResolvedRepoSource.RepoName, d.SourceProvenance.ResolvedRepoSource.CommitSha),
+				Color:     color,
+				Title:     "Cloud Build",
+				TitleLink: d.LogURL,
+				Fields: []slackField{
+					{
+						Title: "Build ID",
+						Value: d.ID,
+					},
+					{
+						Title: "Images",
+						Value: images,
+					},
+					{
+						Title: "Repository",
+						Value: d.SourceProvenance.ResolvedRepoSource.RepoName,
+					},
+					{
+						Title: "Commit SHA",
+						Value: d.SourceProvenance.ResolvedRepoSource.CommitSha,
+					},
+					{
+						Title: "Project ID",
+						Value: d.SourceProvenance.ResolvedRepoSource.ProjectID,
+					},
+					{
+						Title: "Status",
+						Value: d.Status,
 					},
 				},
 			},
-		})
+		},
 	})
-	if err != nil {
-		log.Fatal(err)
-	}
 }
 
 var statusColor = map[string]string{
