@@ -47,7 +47,7 @@ func main() {
 
 	for _, sub := range subs {
 		fmt.Printf("subscribe to %s/%s\n", sub.ProjectID, sub.ID)
-		go client.SubscriptionInProject(sub.ID, sub.ProjectID).Receive(ctx, (&msgHandler{sub.URL}).Handle)
+		go client.SubscriptionInProject(sub.ID, sub.ProjectID).Receive(ctx, (&msgHandler{sub.ID, sub.ProjectID, sub.URL}).Handle)
 	}
 
 	stop := make(chan os.Signal, 1)
@@ -57,10 +57,14 @@ func main() {
 }
 
 type msgHandler struct {
-	url string
+	id        string
+	projectID string
+	url       string
 }
 
 func (h *msgHandler) Handle(ctx context.Context, msg *pubsub.Message) {
+	fmt.Printf("%s/%s: received message\n", h.projectID, h.id)
+
 	defer msg.Ack()
 
 	var d buildData
