@@ -1,0 +1,17 @@
+steps:
+- name: gcr.io/cloud-builders/go
+  args: [build, -o, entrypoint, -ldflags, -w -s, main.go]
+  env:
+  - PROJECT_ROOT=github.com/moonrhythm/cloudbuildslackhook
+  - GOOS=linux
+  - GOARCH=amd64
+  - CGO_ENABLED=0
+
+- name: gcr.io/cloud-builders/docker
+  args: [build, -t, gcr.io/$PROJECT_ID/cloudbuildslackhook, '.']
+- name: gcr.io/cloud-builders/docker
+  args: [build, -t, gcr.io/$PROJECT_ID/cloudbuildslackhook:$COMMIT_SHA, '.']
+
+images:
+- gcr.io/$PROJECT_ID/cloudbuildslackhook
+- gcr.io/$PROJECT_ID/cloudbuildslackhook:$COMMIT_SHA
