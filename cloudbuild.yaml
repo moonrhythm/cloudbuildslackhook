@@ -2,7 +2,6 @@ steps:
 - name: gcr.io/cloud-builders/go
   args: [build, -o, entrypoint, -ldflags, -w -s, main.go]
   env:
-  - PROJECT_ROOT=github.com/moonrhythm/cloudbuildslackhook
   - GOOS=linux
   - GOARCH=amd64
   - CGO_ENABLED=0
