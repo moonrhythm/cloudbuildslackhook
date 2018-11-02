@@ -1,4 +1,4 @@
-FROM acoshift/go-scratch
+FROM gcr.io/moonrhythm-containers/go-scratch
 
 ADD entrypoint /entrypoint
 
