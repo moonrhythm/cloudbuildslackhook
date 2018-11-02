@@ -13,6 +13,7 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
+	"time"
 
 	"cloud.google.com/go/pubsub"
 	"github.com/acoshift/configfile"
@@ -188,6 +189,10 @@ type slackField struct {
 	Short bool   `json:"short"`
 }
 
+var client = http.Client{
+	Timeout: 10 * time.Second,
+}
+
 func sendSlackMessage(slackURL string, message *slackMsg) error {
 	if slackURL == "" {
 		return nil
@@ -202,7 +207,7 @@ func sendSlackMessage(slackURL string, message *slackMsg) error {
 	if err != nil {
 		return err
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return err
 	}
