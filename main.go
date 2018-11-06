@@ -123,12 +123,12 @@ func (h *msgHandler) Handle(ctx context.Context, msg *pubsub.Message) {
 }
 
 var statusColor = map[string]string{
-	// "QUEUED":         "#b2b2b2",
-	"WORKING":        "#faff77",
-	"SUCCESS":        "#75ff56",
+	"QUEUED":         "#508dff",
+	"WORKING":        "#fffc55",
+	"SUCCESS":        "#5bff37",
 	"FAILURE":        "#f92a2a",
-	"INTERNAL_ERROR": "#a51c1c",
-	"TIMEOUT":        "#820202",
+	"INTERNAL_ERROR": "#f92a2a",
+	"TIMEOUT":        "#f92a2a",
 	"CANCELLED":      "#b959ff",
 }
 
