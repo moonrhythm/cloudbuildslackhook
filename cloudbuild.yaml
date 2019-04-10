@@ -13,5 +13,5 @@ steps:
   args: [tag, gcr.io/$PROJECT_ID/cloudbuildslackhook, 'gcr.io/$PROJECT_ID/cloudbuildslackhook:$COMMIT_SHA']
 
 images:
-- gcr.io/$PROJECT_ID/cloudbuildslackhook:lateset
+- gcr.io/$PROJECT_ID/cloudbuildslackhook:latest
 - gcr.io/$PROJECT_ID/cloudbuildslackhook:$COMMIT_SHA
