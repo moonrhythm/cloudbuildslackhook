@@ -10,10 +10,7 @@ import (
 	"log"
 	"mime"
 	"net/http"
-	"os"
-	"os/signal"
 	"strings"
-	"syscall"
 	"time"
 
 	"cloud.google.com/go/pubsub"
@@ -21,37 +18,16 @@ import (
 	"google.golang.org/api/option"
 )
 
-type subscription struct {
-	ID        string `yaml:"id"`
-	ProjectID string `yaml:"projectId"`
-	URL       string `yaml:"url"`
-}
-
 var (
-	config = configfile.NewReader("config")
-	subs   = make(map[string]*subscription) // projects/%s/subscriptions/%s
+	config   = configfile.NewReader("config")
+	mode     = config.String("mode") // push, pull
+	slackURL = config.String("slack_url")
 )
 
 func main() {
-	// id|project|slackUrl,id|project|slackUrl
-	subList := strings.Split(strings.TrimSpace(config.String("subscriptions")), ",")
-	for _, sub := range subList {
-		x := strings.Split(sub, "|")
-		if len(x) != 3 {
-			continue
-		}
-		key := fmt.Sprintf("projects/%s/subscriptions/%s", x[1], x[0])
-		subs[key] = &subscription{
-			ID:        x[0],
-			ProjectID: x[1],
-			URL:       x[2],
-		}
-		fmt.Println("load", key)
-	}
-
-	mode := config.String("mode")
 	if mode == "push" {
-		startPush(config.StringDefault("port", "8080"))
+		port := config.StringDefault("port", "8080")
+		startPush(port)
 		return
 	}
 
@@ -59,6 +35,9 @@ func main() {
 }
 
 func startPull() {
+	projectID := config.String("project_id")
+	subscription := config.String("subscription")
+
 	ctx := context.Background()
 
 	client, err := pubsub.NewClient(ctx, "", option.WithScopes(pubsub.ScopePubSub))
@@ -67,36 +46,27 @@ func startPull() {
 	}
 	defer client.Close()
 
-	for key, sub := range subs {
-		fmt.Printf("subscribe to %s\n", key)
-		go client.SubscriptionInProject(sub.ID, sub.ProjectID).
-			Receive(ctx, msgHandler{sub}.Handle)
-	}
+	fmt.Printf("subscribe to %s/%s\n", projectID, subscription)
+	err = client.SubscriptionInProject(subscription, projectID).
+		Receive(ctx, func(ctx context.Context, msg *pubsub.Message) {
+			defer msg.Ack()
 
-	stop := make(chan os.Signal, 1)
-	signal.Notify(stop, syscall.SIGTERM)
+			fmt.Println("received message")
 
-	<-stop
-}
+			var d buildData
+			err := json.Unmarshal(msg.Data, &d)
+			if err != nil {
+				return
+			}
 
-type msgHandler struct {
-	*subscription
-}
-
-func (h msgHandler) Handle(ctx context.Context, msg *pubsub.Message) {
-	defer msg.Ack()
-
-	fmt.Printf("received message from %s/%s\n", h.ProjectID, h.ID)
-
-	var d buildData
-	err := json.Unmarshal(msg.Data, &d)
+			err = processBuildData(&d)
+			if err != nil {
+				msg.Nack()
+				return
+			}
+		})
 	if err != nil {
-		return
-	}
-
-	err = processBuildData(h.URL, &d)
-	if err != nil {
-		msg.Nack()
+		log.Fatal(err)
 		return
 	}
 }
@@ -133,19 +103,12 @@ func startPush(port string) {
 		}
 
 		if msg.Subscription == "" || msg.Message.ID == "" {
+			log.Println("invalid message")
 			badRequest(w)
 			return
 		}
 
-		fmt.Printf("received message from %s\n", msg.Subscription)
-
-		// lookup subscription
-		sub := subs[msg.Subscription]
-		if sub == nil {
-			log.Println("subscription not found", msg.Subscription)
-			badRequest(w)
-			return
-		}
+		fmt.Printf("received push message from %s\n", msg.Subscription)
 
 		var d buildData
 		err = json.Unmarshal(msg.Message.Data, &d)
@@ -155,11 +118,11 @@ func startPush(port string) {
 			return
 		}
 
-		processBuildData(sub.URL, &d)
+		processBuildData(&d)
 	}))
 }
 
-func processBuildData(slackURL string, d *buildData) error {
+func processBuildData(d *buildData) error {
 	color := statusColor[d.Status]
 	if color == "" {
 		return nil
@@ -170,7 +133,7 @@ func processBuildData(slackURL string, d *buildData) error {
 		images = "-"
 	}
 
-	return sendSlackMessage(slackURL, &slackMsg{
+	return sendSlackMessage(&slackMsg{
 		Attachments: []slackAttachment{
 			{
 				Fallback: fmt.Sprintf("cloudbuild: %s:%s",
@@ -282,7 +245,7 @@ var client = http.Client{
 	Timeout: 5 * time.Second,
 }
 
-func sendSlackMessage(slackURL string, message *slackMsg) error {
+func sendSlackMessage(message *slackMsg) error {
 	if slackURL == "" {
 		return nil
 	}
