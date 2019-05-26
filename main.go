@@ -72,19 +72,15 @@ func startPull() {
 }
 
 func startPush(port string) {
-	badRequest := func(w http.ResponseWriter) {
-		http.Error(w, "Bad Request", http.StatusBadRequest)
-	}
-
 	fmt.Println("Listening on", port)
 	http.ListenAndServe(":"+port, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+
 		if r.Method != http.MethodPost {
-			badRequest(w)
 			return
 		}
 		mt, _, _ := mime.ParseMediaType(r.Header.Get("Content-Type"))
 		if mt != "application/json" {
-			badRequest(w)
 			return
 		}
 
@@ -98,13 +94,12 @@ func startPush(port string) {
 		err := json.NewDecoder(r.Body).Decode(&msg)
 		if err != nil {
 			log.Println(err)
-			badRequest(w)
 			return
 		}
 
 		if msg.Subscription == "" || msg.Message.ID == "" {
 			log.Println("invalid message")
-			badRequest(w)
+			log.Println(msg)
 			return
 		}
 
@@ -114,7 +109,6 @@ func startPush(port string) {
 		err = json.Unmarshal(msg.Message.Data, &d)
 		if err != nil {
 			log.Println("invalid message body")
-			badRequest(w)
 			return
 		}
 
