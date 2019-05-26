@@ -97,9 +97,8 @@ func startPush(port string) {
 			return
 		}
 
-		if msg.Subscription == "" || msg.Message.ID == "" {
+		if msg.Subscription == "" {
 			log.Println("invalid message")
-			log.Println(msg)
 			return
 		}
 
