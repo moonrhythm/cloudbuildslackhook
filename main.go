@@ -37,17 +37,22 @@ func main() {
 func startPull() {
 	projectID := config.String("project_id")
 	subscription := config.String("subscription")
+	googCredJSON := config.Bytes("google_application_credentials_json")
 
 	ctx := context.Background()
+	opt := []option.ClientOption{option.WithScopes(pubsub.ScopePubSub)}
+	if len(googCredJSON) > 0 {
+		opt = append(opt, option.WithCredentialsJSON(googCredJSON))
+	}
 
-	client, err := pubsub.NewClient(ctx, "", option.WithScopes(pubsub.ScopePubSub))
+	client, err := pubsub.NewClient(ctx, projectID, opt...)
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer client.Close()
 
 	fmt.Printf("subscribe to %s/%s\n", projectID, subscription)
-	err = client.SubscriptionInProject(subscription, projectID).
+	err = client.Subscription(subscription).
 		Receive(ctx, func(ctx context.Context, msg *pubsub.Message) {
 			defer msg.Ack()
 
