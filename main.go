@@ -56,7 +56,8 @@ func startPull() {
 		Receive(ctx, func(ctx context.Context, msg *pubsub.Message) {
 			defer msg.Ack()
 
-			fmt.Println("received message")
+			log.Println("received message")
+			log.Println(string(msg.Data))
 
 			var d buildData
 			err := json.Unmarshal(msg.Data, &d)
@@ -107,7 +108,7 @@ func startPush(port string) {
 			return
 		}
 
-		fmt.Printf("received push message from %s\n", msg.Subscription)
+		log.Printf("received push message from %s\n", msg.Subscription)
 
 		var d buildData
 		err = json.Unmarshal(msg.Message.Data, &d)
