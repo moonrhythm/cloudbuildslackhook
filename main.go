@@ -127,47 +127,69 @@ func processBuildData(d *buildData) error {
 		return nil
 	}
 
-	images := strings.Join(d.Images, "\n")
-	if images == "" {
-		images = "-"
+	fields := []slackField{
+		{
+			Title: "Build ID",
+			Value: d.ID,
+		},
 	}
+
+	if images := strings.Join(d.Images, "\n"); images != "" {
+		fields = append(fields, slackField{
+			Title: "Images",
+			Value: images,
+		})
+	}
+
+	fallbackText := "cloudbuild: "
+
+	if repoName := d.Substitutions.RepoName; repoName != "" {
+		fields = append(fields, slackField{
+			Title: "Repository",
+			Value: d.SourceProvenance.ResolvedRepoSource.RepoName,
+		})
+		fallbackText += repoName
+
+		if commitSHA := d.Substitutions.CommitSHA; commitSHA != "" {
+			fields = append(fields, slackField{
+				Title: "Commit SHA",
+				Value: commitSHA,
+			})
+			fallbackText += ":" + commitSHA
+		}
+	} else if bucketName := d.SourceProvenance.ResolvedStorageSource.Bucket; bucketName != "" {
+		fields = append(fields, slackField{
+			Title: "Bucket",
+			Value: bucketName,
+		})
+		fallbackText += repoName
+
+		if object := d.SourceProvenance.ResolvedStorageSource.Object; object != "" {
+			fields = append(fields, slackField{
+				Title: "Object",
+				Value: object,
+			})
+			fallbackText += "/" + object
+		}
+	}
+
+	fields = append(fields, slackField{
+		Title: "Project ID",
+		Value: d.ProjectID,
+	})
+	fields = append(fields, slackField{
+		Title: "Status",
+		Value: d.Status,
+	})
 
 	return sendSlackMessage(&slackMsg{
 		Attachments: []slackAttachment{
 			{
-				Fallback: fmt.Sprintf("cloudbuild: %s:%s",
-					d.SourceProvenance.ResolvedRepoSource.RepoName,
-					d.SourceProvenance.ResolvedRepoSource.CommitSha,
-				),
+				Fallback: fallbackText,
 				Color:     color,
 				Title:     "Cloud Build",
 				TitleLink: d.LogURL,
-				Fields: []slackField{
-					{
-						Title: "Build ID",
-						Value: d.ID,
-					},
-					{
-						Title: "Images",
-						Value: images,
-					},
-					{
-						Title: "Repository",
-						Value: d.SourceProvenance.ResolvedRepoSource.RepoName,
-					},
-					{
-						Title: "Commit SHA",
-						Value: d.SourceProvenance.ResolvedRepoSource.CommitSha,
-					},
-					{
-						Title: "Project ID",
-						Value: d.SourceProvenance.ResolvedRepoSource.ProjectID,
-					},
-					{
-						Title: "Status",
-						Value: d.Status,
-					},
-				},
+				Fields: fields,
 			},
 		},
 	})
@@ -193,6 +215,10 @@ type buildData struct {
 			RepoName   string `json:"repoName"`
 			BranchName string `json:"branchName"`
 		} `json:"repoSource"`
+		StorageSource struct {
+			Bucket string `json:"bucket"`
+			Object string `json:"object"`
+		} `json:"storageSource"`
 	} `json:"source"`
 	Timeout   string   `json:"timeout"`
 	Images    []string `json:"images"`
@@ -206,9 +232,21 @@ type buildData struct {
 			RepoName  string `json:"repoName"`
 			CommitSha string `json:"commitSha"`
 		} `json:"resolvedRepoSource"`
+		ResolvedStorageSource struct {
+			Bucket string `json:"bucket"`
+			Object string `json:"object"`
+		} `json:"resolvedStorageSource"`
 	} `json:"sourceProvenance"`
 	BuildTriggerID string `json:"buildTriggerId"`
 	LogURL         string `json:"logUrl"`
+	Substitutions struct {
+		// Github App source will be storage source but still have repo detail inside substitutions
+		RepoName string `json:"REPO_NAME"`
+		BranchName string `json:"BRANCH_NAME"`
+		CommitSHA string `json:"COMMIT_SHA"`
+		RevisionID string `json:"REVISION_ID"`
+		ShortSHA string `json:"SHORT_SHA"`
+	} `json:"substitutions"`
 }
 
 type slackMsg struct {
